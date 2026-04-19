@@ -123,13 +123,13 @@ summary {
 
 .capture-grid {
   position: fixed;
-  bottom: 0;
+  bottom: max(6rem, 15vh);
   left: 0;
   right: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
-  padding: 0.6rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  padding: 0.6rem 0.75rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
   max-width: 720px;
   margin: 0 auto;
   background: linear-gradient(to top, var(--bg) 70%, transparent);
@@ -178,7 +178,7 @@ summary {
   display: grid;
   gap: 0.5rem;
   margin-top: 0.6rem;
-  padding-bottom: calc(max(8rem, 20vh) + 2.5rem);
+  padding-bottom: calc(max(14rem, 35vh) + 2.5rem);
   align-content: start;
 }
 
