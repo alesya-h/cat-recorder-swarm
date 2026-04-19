@@ -179,6 +179,11 @@ input {
   margin-bottom: 0.5rem;
 }
 
+.slider-value {
+  margin-top: 0.4rem;
+  color: rgba(241, 248, 236, 0.72);
+}
+
 .input-list,
 .log-list {
   list-style: none;

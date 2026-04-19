@@ -7,20 +7,20 @@ class CatRecorderProcessor extends AudioWorkletProcessor {
     }
 
     const channelData = input.map((channel) => new Float32Array(channel));
-    let sum = 0;
-    let count = 0;
+    let peak = 0;
 
     for (const channel of channelData) {
       for (let index = 0; index < channel.length; index += 1) {
-        const sample = channel[index];
-        sum += sample * sample;
-        count += 1;
+        const absolute = Math.abs(channel[index]);
+        if (absolute > peak) {
+          peak = absolute;
+        }
       }
     }
 
     this.port.postMessage({
       channelData,
-      level: count === 0 ? 0 : Math.sqrt(sum / count),
+      peak,
     });
 
     return true;
@@ -60,9 +60,9 @@ export async function startBrowserInput({ input, onChunk, onError }) {
 
   const constraints = {
     audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
       channelCount: 1,
     },
   };
@@ -82,6 +82,7 @@ export async function startBrowserInput({ input, onChunk, onError }) {
   const audioContext = new AudioContextCtor({ latencyHint: 'interactive' });
   const source = audioContext.createMediaStreamSource(stream);
   const sink = audioContext.createGain();
+  const gain = normalizeGain(input.gain);
 
   sink.gain.value = 0;
   sink.connect(audioContext.destination);
@@ -91,9 +92,9 @@ export async function startBrowserInput({ input, onChunk, onError }) {
 
   try {
     if (audioContext.audioWorklet?.addModule && typeof AudioWorkletNode !== 'undefined') {
-      disconnectNode = await startWithAudioWorklet({ audioContext, source, sink, onChunk, onError });
+      disconnectNode = await startWithAudioWorklet({ audioContext, source, sink, gain, onChunk, onError });
     } else {
-      disconnectNode = startWithScriptProcessor({ audioContext, source, sink, onChunk, onError });
+      disconnectNode = startWithScriptProcessor({ audioContext, source, sink, gain, onChunk, onError });
     }
   } catch (error) {
     await audioContext.close().catch(() => {});
@@ -112,8 +113,9 @@ export async function startBrowserInput({ input, onChunk, onError }) {
   };
 }
 
-async function startWithAudioWorklet({ audioContext, source, sink, onChunk, onError }) {
+async function startWithAudioWorklet({ audioContext, source, sink, gain, onChunk, onError }) {
   const moduleUrl = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: 'text/javascript' }));
+  const rollingMeter = createRollingPeakMeter();
 
   try {
     await audioContext.audioWorklet.addModule(moduleUrl);
@@ -125,12 +127,12 @@ async function startWithAudioWorklet({ audioContext, source, sink, onChunk, onEr
 
   workletNode.port.onmessage = (event) => {
     try {
-      const channelData = event.data.channelData.map((channel) => new Float32Array(channel));
+      const channelData = event.data.channelData.map((channel) => applyGain(new Float32Array(channel), gain));
       onChunk({
         sampleRate: audioContext.sampleRate,
         channelData,
         captureEndEpochMs: Date.now(),
-        level: event.data.level || 0,
+        level: rollingMeter.update(event.data.peak || 0),
       });
     } catch (error) {
       onError?.(error);
@@ -146,23 +148,26 @@ async function startWithAudioWorklet({ audioContext, source, sink, onChunk, onEr
   };
 }
 
-function startWithScriptProcessor({ audioContext, source, sink, onChunk, onError }) {
+function startWithScriptProcessor({ audioContext, source, sink, gain, onChunk, onError }) {
   const channelCount = Math.max(1, Math.min(source.channelCount || 1, 2));
   const processor = audioContext.createScriptProcessor(4096, channelCount, channelCount);
+  const rollingMeter = createRollingPeakMeter();
 
   processor.onaudioprocess = (event) => {
     try {
       const inputBuffer = event.inputBuffer;
       const copiedChannelData = Array.from({ length: inputBuffer.numberOfChannels }, (_, channelIndex) => {
         const sourceChannel = inputBuffer.getChannelData(channelIndex);
-        return new Float32Array(sourceChannel);
+        return applyGain(new Float32Array(sourceChannel), gain);
       });
+
+      const peak = computePeak(copiedChannelData);
 
       onChunk({
         sampleRate: inputBuffer.sampleRate,
         channelData: copiedChannelData,
         captureEndEpochMs: Date.now(),
-        level: computeLevel(copiedChannelData),
+        level: rollingMeter.update(peak),
       });
     } catch (error) {
       onError?.(error);
@@ -227,17 +232,71 @@ function withTimeout(promise, timeoutMs) {
   ]);
 }
 
-function computeLevel(channelData) {
-  let sum = 0;
-  let count = 0;
+function createRollingPeakMeter(windowMs = 500) {
+  const entries = [];
+
+  return {
+    update(peak, now = Date.now()) {
+      entries.push({ peak, now });
+
+      while (entries.length > 0 && now - entries[0].now > windowMs) {
+        entries.shift();
+      }
+
+      let maxPeak = 0;
+      for (const entry of entries) {
+        if (entry.peak > maxPeak) {
+          maxPeak = entry.peak;
+        }
+      }
+
+      return maxPeak;
+    },
+  };
+}
+
+function applyGain(channel, gain) {
+  if (gain === 1) {
+    return channel;
+  }
+
+  for (let index = 0; index < channel.length; index += 1) {
+    channel[index] = clampSample(channel[index] * gain);
+  }
+
+  return channel;
+}
+
+function computePeak(channelData) {
+  let peak = 0;
 
   for (const channel of channelData) {
     for (let index = 0; index < channel.length; index += 1) {
-      const sample = channel[index];
-      sum += sample * sample;
-      count += 1;
+      const absolute = Math.abs(channel[index]);
+      if (absolute > peak) {
+        peak = absolute;
+      }
     }
   }
 
-  return count === 0 ? 0 : Math.sqrt(sum / count);
+  return peak;
+}
+
+function normalizeGain(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 1;
+  }
+
+  return Math.max(0.1, Math.min(10, numeric));
+}
+
+function clampSample(sample) {
+  if (sample > 1) {
+    return 1;
+  }
+  if (sample < -1) {
+    return -1;
+  }
+  return sample;
 }
