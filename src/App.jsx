@@ -5,10 +5,11 @@ import { createRecorderClient } from '../shared/recorder-client.js';
 import { loadBrowserAudioInputs, startBrowserInput } from './audio/browser-inputs.js';
 
 const DEVICE_NAME_STORAGE_KEY = 'cat-recorder-device-name';
+const RECORDER_PREFS_STORAGE_KEY = 'cat-recorder-prefs';
 
 function makeInitialState() {
   const backendUrl = normalizeBackendUrl();
-  const deviceName = getInitialDeviceName();
+  const prefs = getInitialRecorderPrefs();
 
   return {
     backendUrl,
@@ -21,14 +22,15 @@ function makeInitialState() {
       lastControllerTimestamp: null,
     },
     recorder: {
-      deviceName,
+      deviceName: prefs.deviceName,
       loadingInputs: false,
       autoRecordEnabled: true,
       availableInputs: [],
-      selectedInputIds: [],
+      selectedInputIds: prefs.selectedInputIds,
+      hasSavedSelection: prefs.hasSavedSelection,
       inputAliases: {},
-      inputGainEnabled: {},
-      inputGains: {},
+      inputGainEnabled: prefs.inputGainEnabled,
+      inputGains: prefs.inputGains,
       connected: false,
       running: false,
       activeInputs: [],
@@ -78,16 +80,19 @@ export default function App() {
 
     try {
       const availableInputs = await loadBrowserAudioInputs();
-      const selectedInputIds = availableInputs.map((input) => input.id);
 
       setState((current) => ({
         ...current,
         recorder: {
-          ...current.recorder,
+          ...persistRecorderPrefs({
+            ...current.recorder,
+            selectedInputIds: current.recorder.hasSavedSelection
+              ? availableInputs.filter((input) => current.recorder.selectedInputIds.includes(input.id)).map((input) => input.id)
+              : availableInputs.map((input) => input.id),
+          }),
           autoRecordEnabled: true,
           loadingInputs: false,
           availableInputs,
-          selectedInputIds,
         },
       }));
     } catch (error) {
@@ -148,7 +153,7 @@ export default function App() {
       }));
 
       controllerReconnectRef.current = setTimeout(() => {
-        if (controllerSocketRef.current === socket) {
+        if (controllerSocketRef.current === null) {
           connectControllerMode();
         }
       }, 1500);
@@ -174,20 +179,20 @@ export default function App() {
       }
     }
 
-    const selectedInputIds = recorderState.selectedInputIds.length > 0
-      ? recorderState.selectedInputIds
+    const selectedInputIds = recorderState.hasSavedSelection
+      ? availableInputs.filter((input) => recorderState.selectedInputIds.includes(input.id)).map((input) => input.id)
       : availableInputs.map((input) => input.id);
 
     const selectedInputs = availableInputs
-      .filter((input) => selectedInputIds.includes(input.id))
       .map((input, index, items) => ({
         ...input,
         gain: recorderState.inputGainEnabled[input.id] ? gainFromDb(getInputGainDb(recorderState.inputGains[input.id])) : 1,
         inputName: buildInputName(input, recorderState.inputAliases[input.id], items.length),
+        submitEnabled: selectedInputIds.includes(input.id),
       }));
 
     if (selectedInputs.length === 0) {
-      setState((current) => ({ ...current, error: 'Select at least one audio input' }));
+      setState((current) => ({ ...current, error: 'No audio inputs available' }));
       return;
     }
 
@@ -313,6 +318,10 @@ export default function App() {
     }
 
     cleanupControllerSocket(controllerSocketRef, controllerReconnectRef);
+
+    if (state.recorder.availableInputs.length === 0 && !state.recorder.loadingInputs) {
+      void loadInputs();
+    }
   }
 
   return (
@@ -421,10 +430,9 @@ export default function App() {
               value={state.recorder.deviceName}
               onChange={(event) => {
                 const deviceName = event.target.value;
-                saveDeviceName(deviceName);
                 setState((current) => ({
                   ...current,
-                  recorder: { ...current.recorder, deviceName },
+                  recorder: persistRecorderPrefs({ ...current.recorder, deviceName }),
                 }));
                 recorderClientRef.current?.setDeviceName(deviceName.trim() || 'web-recorder');
               }}
@@ -458,22 +466,19 @@ export default function App() {
                       const nextSelectedInputIds = event.target.checked
                         ? [...state.recorder.selectedInputIds, input.id]
                         : state.recorder.selectedInputIds.filter((value) => value !== input.id);
-                      const nextRecorderState = {
-                        ...state.recorder,
-                        selectedInputIds: nextSelectedInputIds,
-                      };
 
                       setState((current) => ({
                         ...current,
-                        recorder: {
+                        recorder: persistRecorderPrefs({
                           ...current.recorder,
+                          hasSavedSelection: true,
                           selectedInputIds: nextSelectedInputIds,
-                        },
+                        }),
                       }));
 
-                      if (state.recorder.running) {
-                        void startRecorderMode(nextRecorderState);
-                      }
+                      recorderClientRef.current?.setInputConfig(input.id, {
+                        submitEnabled: event.target.checked,
+                      });
                     }}
                   />
                   <div>
@@ -509,13 +514,13 @@ export default function App() {
                           const enabled = event.target.checked;
                           setState((current) => ({
                             ...current,
-                            recorder: {
+                            recorder: persistRecorderPrefs({
                               ...current.recorder,
                               inputGainEnabled: {
                                 ...current.recorder.inputGainEnabled,
                                 [input.id]: enabled,
                               },
-                            },
+                            }),
                           }));
                           recorderClientRef.current?.setInputConfig(input.id, {
                             gain: enabled ? gainFromDb(gain) : 1,
@@ -535,13 +540,13 @@ export default function App() {
                         const nextGain = Number(event.target.value);
                         setState((current) => ({
                           ...current,
-                          recorder: {
+                          recorder: persistRecorderPrefs({
                             ...current.recorder,
                             inputGains: {
                               ...current.recorder.inputGains,
                               [input.id]: nextGain,
                             },
-                          },
+                          }),
                         }));
                         recorderClientRef.current?.setInputConfig(input.id, {
                           gain: gainFromDb(nextGain),
@@ -631,21 +636,60 @@ function formatLevel(level) {
   return `peak ${percent}%`;
 }
 
-function getInitialDeviceName() {
+function getInitialRecorderPrefs() {
   if (typeof window === 'undefined') {
-    return 'web-recorder';
+    return {
+      deviceName: 'web-recorder',
+      selectedInputIds: [],
+      hasSavedSelection: false,
+      inputGainEnabled: {},
+      inputGains: {},
+    };
   }
 
-  return window.localStorage.getItem(DEVICE_NAME_STORAGE_KEY)?.trim() || 'web-recorder';
+  try {
+    const raw = window.localStorage.getItem(RECORDER_PREFS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const fallbackDeviceName = window.localStorage.getItem(DEVICE_NAME_STORAGE_KEY)?.trim() || 'web-recorder';
+
+    return {
+      deviceName: typeof parsed.deviceName === 'string' && parsed.deviceName.trim() ? parsed.deviceName : fallbackDeviceName,
+      selectedInputIds: Array.isArray(parsed.selectedInputIds) ? parsed.selectedInputIds : [],
+      hasSavedSelection: Array.isArray(parsed.selectedInputIds),
+      inputGainEnabled: isPlainObject(parsed.inputGainEnabled) ? parsed.inputGainEnabled : {},
+      inputGains: isPlainObject(parsed.inputGains) ? parsed.inputGains : {},
+    };
+  } catch {
+    return {
+      deviceName: window.localStorage.getItem(DEVICE_NAME_STORAGE_KEY)?.trim() || 'web-recorder',
+      selectedInputIds: [],
+      hasSavedSelection: false,
+      inputGainEnabled: {},
+      inputGains: {},
+    };
+  }
 }
 
-function saveDeviceName(deviceName) {
-  if (typeof window === 'undefined') {
-    return;
+function persistRecorderPrefs(recorder) {
+  if (typeof window !== 'undefined') {
+    const deviceName = recorder.deviceName?.trim() || 'web-recorder';
+    window.localStorage.setItem(DEVICE_NAME_STORAGE_KEY, deviceName);
+    window.localStorage.setItem(
+      RECORDER_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        deviceName,
+        selectedInputIds: recorder.selectedInputIds,
+        inputGainEnabled: recorder.inputGainEnabled,
+        inputGains: recorder.inputGains,
+      }),
+    );
   }
 
-  const trimmed = deviceName.trim();
-  window.localStorage.setItem(DEVICE_NAME_STORAGE_KEY, trimmed || 'web-recorder');
+  return recorder;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 async function startBatteryReporting(recorderClient, batteryCleanupRef, setState) {

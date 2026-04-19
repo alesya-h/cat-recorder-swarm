@@ -26,6 +26,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
         id: session.id,
         label: session.label,
         inputName: session.inputName,
+        submitEnabled: session.submitEnabled,
         active: session.active,
         sampleRate: session.sampleRate,
         channelCount: session.channelCount,
@@ -50,6 +51,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
         id: session.id,
         label: session.label,
         inputName: session.inputName,
+        submitEnabled: session.submitEnabled,
         active: session.active,
         sampleRate: session.sampleRate,
         channelCount: session.channelCount,
@@ -82,6 +84,10 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
   }
 
   async function uploadClipForSession(session, controllerTimestamp, durationSeconds) {
+    if (!session.submitEnabled) {
+      return;
+    }
+
     if (!session.buffer) {
       log(`Input ${session.inputName || session.label} has no audio yet`);
       return;
@@ -182,6 +188,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
         id: input.id,
         label: input.label,
         inputName: input.inputName,
+        submitEnabled: input.submitEnabled !== false,
         startedAtEpochMs: Date.now(),
         active: false,
         sampleRate: null,
@@ -299,6 +306,10 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
 
       if (typeof config.inputName === 'string') {
         session.inputName = config.inputName;
+      }
+
+      if (typeof config.submitEnabled === 'boolean') {
+        session.submitEnabled = config.submitEnabled;
       }
 
       if (config.gain !== undefined) {
