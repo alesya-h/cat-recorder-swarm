@@ -3,6 +3,7 @@ import { analyzeChannelData } from './audio/analyze.js';
 import { LoopedAudioBuffer } from './audio/looped-audio-buffer.js';
 import { encodeAudioClip } from './audio/encode.js';
 import { createBackendUrls } from './net.js';
+import { SOCKET_MESSAGE_TYPES } from './protocol/messages.js';
 
 export function createRecorderClient({ backendUrl, deviceName, clientType, preferredFormat = 'auto', startInput, onState, onLog }) {
   const urls = createBackendUrls(backendUrl);
@@ -43,7 +44,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
   }
 
   function publishStatus() {
-    sendMessage('recorder_status', {
+    sendMessage(SOCKET_MESSAGE_TYPES.RECORDER_STATUS, {
       clientType,
       deviceName: currentDeviceName,
       battery,
@@ -73,7 +74,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
   }
 
   function handleSocketMessage(message) {
-    if (message.type === 'capture_request') {
+    if (message.type === SOCKET_MESSAGE_TYPES.CAPTURE_REQUEST) {
       void handleCaptureRequest(message);
     }
   }
@@ -151,7 +152,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
     socket.addEventListener('open', () => {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
-      sendMessage('hello', { role: 'recorder', clientType });
+      sendMessage(SOCKET_MESSAGE_TYPES.HELLO, { role: 'recorder', clientType });
       publishStatus();
       emitState();
       log('Recorder connected');
