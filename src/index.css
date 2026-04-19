@@ -45,7 +45,7 @@ summary {
 .app {
   max-width: 720px;
   margin: 0 auto;
-  padding: 0.5rem 0.75rem 2rem;
+  padding: 0.5rem 0.75rem 0;
 }
 
 /* ── Status bar ── */
@@ -122,9 +122,18 @@ summary {
 /* ── Capture grid ── */
 
 .capture-grid {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
+  padding: 0.6rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  max-width: 720px;
+  margin: 0 auto;
+  background: linear-gradient(to top, var(--bg) 70%, transparent);
+  z-index: 10;
 }
 
 .capture-btn {
@@ -163,12 +172,14 @@ summary {
   cursor: not-allowed;
 }
 
-/* ── Info grid (below capture) ── */
+/* ── Info grid ── */
 
 .info-grid {
   display: grid;
   gap: 0.5rem;
   margin-top: 0.6rem;
+  padding-bottom: calc(max(8rem, 20vh) + 2.5rem);
+  align-content: start;
 }
 
 @media (min-width: 768px) {
