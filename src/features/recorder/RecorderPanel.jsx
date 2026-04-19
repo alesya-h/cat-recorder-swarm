@@ -1,4 +1,4 @@
-import { formatBattery, formatLevel } from '../../lib/formatters.js';
+import { formatLevel } from '../../lib/formatters.js';
 import { formatGain, getInputGainDb } from './recorder-utils.js';
 
 export function RecorderPanel({
@@ -10,98 +10,111 @@ export function RecorderPanel({
   onInputGainChange,
 }) {
   return (
-    <section className="panel recorder-panel">
-      <div className="section-header">
-        <h2>Recorder</h2>
-        <span className={recorder.connected ? 'status-pill online' : 'status-pill offline'}>
-          {recorder.connected ? 'Connected' : 'Disconnected'}
-        </span>
-      </div>
+    <>
+      <details>
+        <summary>
+          Settings
+          {recorder.activeInputs.length > 0 && (
+            <span className="badge">{recorder.activeInputs.length} active</span>
+          )}
+        </summary>
+        <div className="section-body">
+          <label className="field">
+            <span>Device name</span>
+            <input
+              value={recorder.deviceName}
+              onChange={(e) => onDeviceNameChange(e.target.value)}
+              placeholder="web-recorder"
+            />
+          </label>
 
-      <label className="field">
-        <span>Device name</span>
-        <input
-          value={recorder.deviceName}
-          onChange={(event) => onDeviceNameChange(event.target.value)}
-          placeholder="web-recorder"
-        />
-      </label>
+          {recorder.loadingInputs && <p className="dim">Requesting mic access&hellip;</p>}
 
-      <p className="subtle">
-        {recorder.loadingInputs
-          ? 'Requesting microphone access and starting recording...'
-          : 'Recording starts automatically as soon as microphone access is available.'}
-      </p>
+          <div className="inputs-list">
+            {recorder.availableInputs.map((input) => {
+              const selected = recorder.selectedInputIds.includes(input.id);
+              const gainEnabled = !!recorder.inputGainEnabled[input.id];
+              const gain = getInputGainDb(recorder.inputGains[input.id]);
 
-      <div className="input-picker">
-        {recorder.availableInputs.length === 0 ? <p className="subtle">Waiting for microphone inputs...</p> : null}
-        {recorder.availableInputs.map((input) => {
-          const selected = recorder.selectedInputIds.includes(input.id);
-          const gainEnabled = !!recorder.inputGainEnabled[input.id];
-          const gain = getInputGainDb(recorder.inputGains[input.id]);
-
-          return (
-            <label key={input.id} className="input-card">
-              <input
-                type="checkbox"
-                checked={selected}
-                onChange={(event) => onInputSelected(input.id, event.target.checked)}
-              />
-              <div>
-                <strong>{input.label}</strong>
-                <input
-                  value={recorder.inputAliases[input.id] || ''}
-                  onChange={(event) => onInputAliasChange(input.id, event.target.value)}
-                  placeholder="Optional input name"
-                />
-                <label className="subtle checkbox-row">
+              return (
+                <label key={input.id} className="input-card">
                   <input
                     type="checkbox"
-                    checked={gainEnabled}
-                    onChange={(event) => onInputGainEnabledChange(input.id, event.target.checked)}
+                    checked={selected}
+                    onChange={(e) => onInputSelected(input.id, e.target.checked)}
                   />
-                  <span>Manual gain for this input</span>
+                  <div>
+                    <div className="input-label">{input.label}</div>
+                    <input
+                      value={recorder.inputAliases[input.id] || ''}
+                      onChange={(e) => onInputAliasChange(input.id, e.target.value)}
+                      placeholder="Alias"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="gain-row">
+                      <label onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={gainEnabled}
+                          onChange={(e) => onInputGainEnabledChange(input.id, e.target.checked)}
+                        />
+                        Gain
+                      </label>
+                      <input
+                        type="range"
+                        min="-12"
+                        max="42"
+                        step="1"
+                        value={gain}
+                        disabled={!gainEnabled}
+                        onChange={(e) => onInputGainChange(input.id, Number(e.target.value))}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <span className="gain-value">{formatGain(gain)}</span>
+                    </div>
+                  </div>
                 </label>
-                <input
-                  type="range"
-                  min="-12"
-                  max="42"
-                  step="1"
-                  value={gain}
-                  disabled={!gainEnabled}
-                  onChange={(event) => onInputGainChange(input.id, Number(event.target.value))}
-                />
-                <div className="slider-value">{formatGain(gain)}</div>
-              </div>
-            </label>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
 
-      <div className="runtime-grid">
-        <article className="runtime-card">
-          <h3>Recorder status</h3>
-          <p>Battery: {formatBattery(recorder.battery)}</p>
-          <ul className="input-list">
-            {recorder.activeInputs.map((input) => (
-              <li key={input.id}>
-                <span>{input.inputName || input.label}</span>
-                <span>{input.sampleRate ? `${input.sampleRate} Hz · ${formatLevel(input.level)}` : 'starting...'}</span>
-              </li>
-            ))}
-          </ul>
-        </article>
+          {recorder.activeInputs.length > 0 && (
+            <div className="active-inputs">
+              <div className="active-label">Active inputs</div>
+              <ul className="compact-list">
+                {recorder.activeInputs.map((input) => (
+                  <li key={input.id}>
+                    <span>{input.inputName || input.label}</span>
+                    <span>
+                      {input.sampleRate
+                        ? `${input.sampleRate} Hz \u00B7 ${formatLevel(input.level)}`
+                        : 'starting\u2026'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </details>
 
-        <article className="runtime-card">
-          <h3>Recent logs</h3>
-          <ul className="log-list">
-            {recorder.logs.length === 0 ? <li>Idle</li> : null}
-            {recorder.logs.map((log, index) => (
-              <li key={`${log}-${index}`}>{log}</li>
-            ))}
-          </ul>
-        </article>
-      </div>
-    </section>
+      <details>
+        <summary>
+          Logs
+          {recorder.logs.length > 0 && <span className="badge">{recorder.logs.length}</span>}
+        </summary>
+        <div className="section-body">
+          {recorder.logs.length === 0 ? (
+            <p className="dim">No activity yet</p>
+          ) : (
+            <ul className="log-list">
+              {recorder.logs.map((log, i) => (
+                <li key={`${log}-${i}`}>{log}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </details>
+    </>
   );
 }
