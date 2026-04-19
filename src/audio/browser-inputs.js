@@ -128,11 +128,12 @@ async function startWithAudioWorklet({ audioContext, source, sink, gain, onChunk
   workletNode.port.onmessage = (event) => {
     try {
       const channelData = event.data.channelData.map((channel) => applyGain(new Float32Array(channel), gain));
+      const peak = computePeak(channelData);
       onChunk({
         sampleRate: audioContext.sampleRate,
         channelData,
         captureEndEpochMs: Date.now(),
-        level: rollingMeter.update(event.data.peak || 0),
+        level: rollingMeter.update(peak),
       });
     } catch (error) {
       onError?.(error);
