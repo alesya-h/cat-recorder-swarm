@@ -13,7 +13,6 @@ function makeInitialState() {
 
   return {
     backendUrl,
-    role: null,
     error: '',
     controller: {
       connected: false,
@@ -57,7 +56,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (state.role !== 'recorder' || !state.recorder.autoRecordEnabled) {
+    if (!state.recorder.autoRecordEnabled) {
       return;
     }
 
@@ -69,7 +68,15 @@ export default function App() {
     void startRecorderMode().finally(() => {
       recorderStartingRef.current = false;
     });
-  }, [state.role, state.recorder.autoRecordEnabled, state.recorder.availableInputs, state.recorder.running]);
+  }, [state.recorder.autoRecordEnabled, state.recorder.availableInputs, state.recorder.running]);
+
+  useEffect(() => {
+    connectControllerMode();
+
+    return () => {
+      cleanupControllerSocket(controllerSocketRef, controllerReconnectRef);
+    };
+  }, [state.backendUrl]);
 
   async function loadInputs() {
     setState((current) => ({
@@ -308,22 +315,6 @@ export default function App() {
     }
   }
 
-  function switchRole(role) {
-    setState((current) => ({ ...current, role, error: '' }));
-
-    if (role === 'controller') {
-      void destroyRecorderRuntime(recorderClientRef, batteryCleanupRef, wakeLockRef);
-      connectControllerMode();
-      return;
-    }
-
-    cleanupControllerSocket(controllerSocketRef, controllerReconnectRef);
-
-    if (state.recorder.availableInputs.length === 0 && !state.recorder.loadingInputs) {
-      void loadInputs();
-    }
-  }
-
   return (
     <main className="app-shell">
       <section className="panel hero-panel">
@@ -348,75 +339,63 @@ export default function App() {
           />
         </label>
 
-        <div className="role-grid">
-          <button className={state.role === 'controller' ? 'selected' : ''} onClick={() => switchRole('controller')}>
-            Controller
-          </button>
-          <button className={state.role === 'recorder' ? 'selected' : ''} onClick={() => switchRole('recorder')}>
-            Recorder
-          </button>
-        </div>
-
         {state.error ? <p className="error-box">{state.error}</p> : null}
       </section>
 
-      {state.role === 'controller' ? (
-        <section className="panel controller-panel">
-          <div className="section-header">
-            <h2>Controller</h2>
-            <span className={state.controller.connected ? 'status-pill online' : 'status-pill offline'}>
-              {state.controller.connected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
+      <section className="panel controller-panel">
+        <div className="section-header">
+          <h2>Controller</h2>
+          <span className={state.controller.connected ? 'status-pill online' : 'status-pill offline'}>
+            {state.controller.connected ? 'Connected' : 'Disconnected'}
+          </span>
+        </div>
 
-          <div className="capture-grid">
-            {CAPTURE_PRESETS.map((preset) => (
-              <button
-                key={preset.seconds}
-                className="capture-button"
-                disabled={state.controller.busy}
-                onClick={() => sendCapture(preset.seconds)}
-              >
-                <strong>{preset.label}</strong>
-              </button>
-            ))}
-          </div>
+        <div className="capture-grid">
+          {CAPTURE_PRESETS.map((preset) => (
+            <button
+              key={preset.seconds}
+              className="capture-button"
+              disabled={state.controller.busy}
+              onClick={() => sendCapture(preset.seconds)}
+            >
+              <strong>{preset.label}</strong>
+            </button>
+          ))}
+        </div>
 
-          <div className="section-header">
-            <h3>Connected Recorders</h3>
-            <span>{state.controller.recorders.length}</span>
-          </div>
+        <div className="section-header">
+          <h3>Connected Recorders</h3>
+          <span>{state.controller.recorders.length}</span>
+        </div>
 
-          <div className="recorder-list">
-            {state.controller.recorders.length === 0 ? <p className="subtle">No recorder clients connected yet.</p> : null}
-            {state.controller.recorders.map((recorder) => (
-              <article key={`${recorder.deviceName}-${recorder.connectedAt}`} className="recorder-card">
-                <div className="recorder-card-header">
-                  <h4>{recorder.deviceName}</h4>
-                  <span>{recorder.clientType}</span>
-                </div>
-                <p>
-                  Battery:{' '}
-                  {recorder.battery
-                    ? `${Math.round((recorder.battery.level || 0) * 100)}% ${recorder.battery.charging ? 'charging' : 'on battery'}`
-                    : 'unknown'}
-                </p>
-                <ul className="input-list">
-                  {(recorder.inputs || []).map((input) => (
-                    <li key={input.id}>
-                      <span>{input.inputName || input.label}</span>
-                      <span>{input.sampleRate ? `${input.sampleRate} Hz · ${formatLevel(input.level)}` : 'waiting for audio'}</span>
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
+        <div className="recorder-list">
+          {state.controller.recorders.length === 0 ? <p className="subtle">No recorder clients connected yet.</p> : null}
+          {state.controller.recorders.map((recorder) => (
+            <article key={`${recorder.deviceName}-${recorder.connectedAt}`} className="recorder-card">
+              <div className="recorder-card-header">
+                <h4>{recorder.deviceName}</h4>
+                <span>{recorder.clientType}</span>
+              </div>
+              <p>
+                Battery:{' '}
+                {recorder.battery
+                  ? `${Math.round((recorder.battery.level || 0) * 100)}% ${recorder.battery.charging ? 'charging' : 'on battery'}`
+                  : 'unknown'}
+              </p>
+              <ul className="input-list">
+                {(recorder.inputs || []).map((input) => (
+                  <li key={input.id}>
+                    <span>{input.inputName || input.label}</span>
+                    <span>{input.sampleRate ? `${input.sampleRate} Hz · ${formatLevel(input.level)}` : 'waiting for audio'}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
 
-      {state.role === 'recorder' ? (
-        <section className="panel recorder-panel">
+      <section className="panel recorder-panel">
           <div className="section-header">
             <h2>Recorder</h2>
             <span className={state.recorder.connected ? 'status-pill online' : 'status-pill offline'}>
@@ -585,7 +564,6 @@ export default function App() {
             </article>
           </div>
         </section>
-      ) : null}
     </main>
   );
 }
