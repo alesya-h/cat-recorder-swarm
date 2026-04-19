@@ -182,6 +182,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
         id: input.id,
         label: input.label,
         inputName: input.inputName,
+        startedAtEpochMs: Date.now(),
         active: false,
         sampleRate: null,
         channelCount: null,
@@ -198,11 +199,21 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
           input,
           onChunk: ({ sampleRate, channelData, captureEndEpochMs, level }) => {
             if (!session.buffer) {
+              const frameCount = channelData[0]?.length || 0;
+              const chunkDurationMs = frameCount === 0 ? 0 : (frameCount / sampleRate) * 1000;
+              const chunkStartEpochMs = captureEndEpochMs - chunkDurationMs;
+              const initialFramesWritten = Math.max(
+                0,
+                Math.round(((chunkStartEpochMs - session.startedAtEpochMs) / 1000) * sampleRate),
+              );
+
               session.sampleRate = sampleRate;
               session.channelCount = channelData.length;
               session.buffer = new LoopedAudioBuffer({
                 sampleRate,
                 channelCount: channelData.length,
+                startEpochMs: session.startedAtEpochMs,
+                initialFramesWritten,
               });
               publishStatus();
               emitState();

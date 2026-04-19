@@ -1,13 +1,13 @@
 import { LOOP_DURATION_SECONDS } from '../constants.js';
 
 export class LoopedAudioBuffer {
-  constructor({ sampleRate, channelCount, seconds = LOOP_DURATION_SECONDS }) {
+  constructor({ sampleRate, channelCount, seconds = LOOP_DURATION_SECONDS, startEpochMs = Date.now(), initialFramesWritten = 0 }) {
     this.sampleRate = sampleRate;
     this.channelCount = channelCount;
     this.capacityFrames = Math.max(1, Math.ceil(sampleRate * seconds));
     this.channels = Array.from({ length: channelCount }, () => new Float32Array(this.capacityFrames));
-    this.framesWritten = 0;
-    this.streamStartEpochMs = null;
+    this.framesWritten = Math.max(0, initialFramesWritten);
+    this.streamStartEpochMs = startEpochMs;
   }
 
   append(channelData, captureEndEpochMs = Date.now()) {
@@ -18,10 +18,6 @@ export class LoopedAudioBuffer {
     const frameCount = channelData[0]?.length || 0;
     if (frameCount === 0) {
       return;
-    }
-
-    if (this.streamStartEpochMs === null) {
-      this.streamStartEpochMs = captureEndEpochMs - (frameCount / this.sampleRate) * 1000;
     }
 
     const offset = this.framesWritten;
@@ -39,29 +35,31 @@ export class LoopedAudioBuffer {
   }
 
   extractLast(seconds) {
-    if (this.framesWritten === 0 || this.streamStartEpochMs === null) {
+    if (this.streamStartEpochMs === null) {
       return null;
     }
 
     const availableFrames = Math.min(this.framesWritten, this.capacityFrames);
-    const requestedFrames = Math.min(Math.max(1, Math.round(seconds * this.sampleRate)), availableFrames);
+    const requestedFrames = Math.min(Math.max(1, Math.round(seconds * this.sampleRate)), this.capacityFrames);
+    const copiedFrames = Math.min(requestedFrames, availableFrames);
     const endFrame = this.framesWritten;
-    const startFrame = endFrame - requestedFrames;
+    const startFrame = endFrame - copiedFrames;
+    const targetOffset = requestedFrames - copiedFrames;
     const output = Array.from({ length: this.channelCount }, () => new Float32Array(requestedFrames));
 
     for (let channelIndex = 0; channelIndex < this.channelCount; channelIndex += 1) {
       const source = this.channels[channelIndex];
       const target = output[channelIndex];
 
-      for (let frameIndex = 0; frameIndex < requestedFrames; frameIndex += 1) {
-        target[frameIndex] = source[(startFrame + frameIndex) % this.capacityFrames];
+      for (let frameIndex = 0; frameIndex < copiedFrames; frameIndex += 1) {
+        target[targetOffset + frameIndex] = source[(startFrame + frameIndex) % this.capacityFrames];
       }
     }
 
     return {
       sampleRate: this.sampleRate,
       channelData: output,
-      fromEpochMs: Math.round(this.streamStartEpochMs + (startFrame / this.sampleRate) * 1000),
+      fromEpochMs: Math.round(this.streamStartEpochMs + ((endFrame - requestedFrames) / this.sampleRate) * 1000),
       toEpochMs: Math.round(this.streamStartEpochMs + (endFrame / this.sampleRate) * 1000),
     };
   }
