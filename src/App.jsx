@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { normalizeBackendUrl } from '../shared/net.js';
 import { ControllerPanel } from './features/controller/ControllerPanel.jsx';
 import { useControllerConnection } from './features/controller/useControllerConnection.js';
+import { PeekingCat } from './PeekingCat.jsx';
 import { RecorderPanel } from './features/recorder/RecorderPanel.jsx';
 import { useRecorderRuntime } from './features/recorder/useRecorderRuntime.js';
 import { formatBattery, formatLevel } from './lib/formatters.js';
@@ -95,6 +96,8 @@ export default function App() {
       </div>
 
       <ControllerPanel busy={controller.busy} onCapture={sendCapture} />
+
+      <PeekingCat />
     </div>
   );
 }
