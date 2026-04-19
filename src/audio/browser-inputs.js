@@ -60,10 +60,10 @@ export async function startBrowserInput({ input, onChunk, onError }) {
 
   const constraints = {
     audio: {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-      channelCount: 2,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: 1,
     },
   };
 
@@ -147,7 +147,8 @@ async function startWithAudioWorklet({ audioContext, source, sink, onChunk, onEr
 }
 
 function startWithScriptProcessor({ audioContext, source, sink, onChunk, onError }) {
-  const processor = audioContext.createScriptProcessor(4096, 1, 1);
+  const channelCount = Math.max(1, Math.min(source.channelCount || 1, 2));
+  const processor = audioContext.createScriptProcessor(4096, channelCount, channelCount);
 
   processor.onaudioprocess = (event) => {
     try {
