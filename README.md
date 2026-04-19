@@ -2,6 +2,8 @@
 
 Retroactive cat sound recorder for phones around the house.
 
+![Cat Recorder screenshot](cat-recorder.png)
+
 ## What it does
 
 - The web page is both controller and recorder at the same time.
