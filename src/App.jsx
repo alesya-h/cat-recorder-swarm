@@ -359,7 +359,7 @@ export default function App() {
                   {(recorder.inputs || []).map((input) => (
                     <li key={input.id}>
                       <span>{input.inputName || input.label}</span>
-                      <span>{input.sampleRate ? `${input.sampleRate} Hz` : 'waiting for audio'}</span>
+                      <span>{input.sampleRate ? `${input.sampleRate} Hz · ${formatLevel(input.level)}` : 'waiting for audio'}</span>
                     </li>
                   ))}
                 </ul>
@@ -460,7 +460,7 @@ export default function App() {
                 {state.recorder.activeInputs.map((input) => (
                   <li key={input.id}>
                     <span>{input.inputName || input.label}</span>
-                    <span>{input.sampleRate ? `${input.sampleRate} Hz` : 'starting...'}</span>
+                    <span>{input.sampleRate ? `${input.sampleRate} Hz · ${formatLevel(input.level)}` : 'starting...'}</span>
                   </li>
                 ))}
               </ul>
@@ -499,6 +499,15 @@ function formatBattery(battery) {
   }
 
   return `${Math.round((battery.level || 0) * 100)}% ${battery.charging ? 'charging' : 'on battery'}`;
+}
+
+function formatLevel(level) {
+  if (!Number.isFinite(level)) {
+    return 'level unknown';
+  }
+
+  const percent = Math.max(0, Math.min(100, Math.round(level * 250)));
+  return `level ${percent}%`;
 }
 
 async function startBatteryReporting(recorderClient, batteryCleanupRef, setState) {

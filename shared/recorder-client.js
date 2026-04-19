@@ -1,6 +1,6 @@
 import { RECONNECT_DELAY_MS } from './constants.js';
 import { LoopedAudioBuffer } from './audio/looped-audio-buffer.js';
-import { encodeWav } from './audio/wav.js';
+import { encodeAudioClip } from './audio/encode.js';
 import { createBackendUrls } from './net.js';
 
 export function createRecorderClient({ backendUrl, deviceName, clientType, startInput, onState, onLog }) {
@@ -28,6 +28,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
         active: session.active,
         sampleRate: session.sampleRate,
         channelCount: session.channelCount,
+        level: session.level,
         lastError: session.lastError,
       })),
     });
@@ -51,6 +52,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
         active: session.active,
         sampleRate: session.sampleRate,
         channelCount: session.channelCount,
+        level: session.level,
         lastError: session.lastError,
       })),
     });
@@ -90,14 +92,14 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
       return;
     }
 
-    const wav = encodeWav({ sampleRate: clip.sampleRate, channelData: clip.channelData });
+    const encodedClip = await encodeAudioClip({ sampleRate: clip.sampleRate, channelData: clip.channelData });
     const params = new URLSearchParams({
       controllerTimestamp: String(controllerTimestamp),
       deviceName: currentDeviceName,
       inputName: session.inputName || '',
       fromEpochMs: String(clip.fromEpochMs),
       toEpochMs: String(clip.toEpochMs),
-      format: 'wav',
+      format: encodedClip.format,
     });
 
     const response = await fetch(`${urls.clipsUrl}?${params.toString()}`, {
@@ -105,7 +107,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
       headers: {
         'Content-Type': 'application/octet-stream',
       },
-      body: wav,
+      body: encodedClip.bytes,
     });
 
     if (!response.ok) {
@@ -159,6 +161,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
         active: false,
         sampleRate: null,
         channelCount: null,
+        level: 0,
         buffer: null,
         stop: null,
         lastError: null,
@@ -169,7 +172,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
       try {
         const controller = await startInput({
           input,
-          onChunk: ({ sampleRate, channelData, captureEndEpochMs }) => {
+          onChunk: ({ sampleRate, channelData, captureEndEpochMs, level }) => {
             if (!session.buffer) {
               session.sampleRate = sampleRate;
               session.channelCount = channelData.length;
@@ -181,7 +184,9 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
               emitState();
             }
 
+            session.level = level ?? computeLevel(channelData);
             session.buffer.append(channelData, captureEndEpochMs);
+            emitState();
           },
           onError: (error) => {
             session.lastError = String(error?.message || error);
@@ -249,4 +254,19 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
       emitState();
     },
   };
+}
+
+function computeLevel(channelData) {
+  let sum = 0;
+  let count = 0;
+
+  for (const channel of channelData) {
+    for (let index = 0; index < channel.length; index += 1) {
+      const sample = channel[index];
+      sum += sample * sample;
+      count += 1;
+    }
+  }
+
+  return count === 0 ? 0 : Math.sqrt(sum / count);
 }
