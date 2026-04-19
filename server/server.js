@@ -4,6 +4,7 @@ import http from 'node:http';
 import https from 'node:https';
 import express from 'express';
 import { WebSocketServer } from 'ws';
+import { loadOrCreateAutoHttpsCertificate } from './auto-https.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -233,17 +234,28 @@ async function directoryExists(target) {
 }
 
 async function createHttpServer(expressApp) {
-  const certFile = process.env.HTTPS_CERT_FILE;
-  const keyFile = process.env.HTTPS_KEY_FILE;
-
-  if (!certFile || !keyFile) {
+  if (process.env.HTTP_ONLY === '1') {
     return http.createServer(expressApp);
   }
 
-  const [cert, key] = await Promise.all([
-    fs.readFile(path.resolve(certFile)),
-    fs.readFile(path.resolve(keyFile)),
-  ]);
+  const certFile = process.env.HTTPS_CERT_FILE;
+  const keyFile = process.env.HTTPS_KEY_FILE;
 
-  return https.createServer({ cert, key }, expressApp);
+  if (certFile && keyFile) {
+    const [cert, key] = await Promise.all([
+      fs.readFile(path.resolve(certFile)),
+      fs.readFile(path.resolve(keyFile)),
+    ]);
+
+    return https.createServer({ cert, key }, expressApp);
+  }
+
+  if (process.env.AUTO_HTTPS === '1') {
+    const certificate = await loadOrCreateAutoHttpsCertificate();
+    const mode = certificate.generated ? 'generated' : 'reused';
+    console.log(`Using ${mode} self-signed HTTPS certificate for: ${certificate.hosts.join(', ')}`);
+    return https.createServer({ cert: certificate.cert, key: certificate.key }, expressApp);
+  }
+
+  return http.createServer(expressApp);
 }

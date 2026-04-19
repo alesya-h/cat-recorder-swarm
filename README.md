@@ -24,6 +24,13 @@ npm run build
 npm start
 ```
 
+Auto-generated self-signed HTTPS:
+
+```bash
+npm run build
+npm run start:https
+```
+
 The backend listens on `PORT` or `3001`.
 
 ## Recorder CLI
@@ -45,6 +52,16 @@ If you want phones on your LAN to record directly from the browser, run the serv
 ```bash
 HTTPS_CERT_FILE=/path/to/cert.pem HTTPS_KEY_FILE=/path/to/key.pem npm start
 ```
+
+Or let the server generate and cache a self-signed certificate automatically:
+
+```bash
+npm run start:https
+```
+
+The generated certificate covers `localhost`, `127.0.0.1`, `::1`, and the machine's current network addresses. You can add more hostnames or IPs with `AUTO_HTTPS_HOSTS=name-or-ip,other-name-or-ip npm run start:https`.
+
+Important: this only makes the app speak HTTPS. Mobile browsers may still refuse microphone access until the certificate is trusted on the device.
 
 ## Storage
 

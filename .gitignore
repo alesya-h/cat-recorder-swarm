@@ -1,6 +1,7 @@
 node_modules/
 dist/
 recordings/
+.server-tls/
 
 .env
 .env.*
