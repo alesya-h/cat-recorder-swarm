@@ -3,7 +3,7 @@ import { normalizeBackendUrl } from '../shared/net.js';
 import { ControllerPanel } from './features/controller/ControllerPanel.jsx';
 import { useControllerConnection } from './features/controller/useControllerConnection.js';
 import { PeekingCat } from './PeekingCat.jsx';
-import { RecorderPanel } from './features/recorder/RecorderPanel.jsx';
+import { RecorderSettings, RecorderLogs } from './features/recorder/RecorderPanel.jsx';
 import { useRecorderRuntime } from './features/recorder/useRecorderRuntime.js';
 import { formatBattery, formatLevel } from './lib/formatters.js';
 
@@ -48,50 +48,52 @@ export default function App() {
       )}
 
       <div className="info-grid">
-        <details>
-          <summary>
-            Recorders
-            <span className="badge">{controller.recorders.length}</span>
-          </summary>
-          <div className="section-body">
-            {controller.recorders.length === 0 ? (
-              <p className="dim">No recorders connected</p>
-            ) : (
-              controller.recorders.map((rec) => (
-                <div key={`${rec.deviceName}-${rec.connectedAt}`} className="card">
-                  <div className="card-header">
-                    <strong>{rec.deviceName}</strong>
-                    <span className="dim">{formatBattery(rec.battery)}</span>
-                  </div>
-                  {(rec.inputs || []).length > 0 && (
-                    <ul className="compact-list">
-                      {rec.inputs.map((input) => (
-                        <li key={input.id}>
-                          <span>{input.inputName || input.label}</span>
-                          <span>
-                            {input.sampleRate
-                              ? `${input.sampleRate} Hz \u00B7 ${formatLevel(input.level)}`
-                              : 'waiting\u2026'}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </details>
+        <RecorderSettings
+          recorder={recorder}
+          onDeviceNameChange={setDeviceName}
+          onInputSelected={setInputSelected}
+          onInputAliasChange={setInputAlias}
+          onInputGainEnabledChange={setInputGainEnabled}
+          onInputGainChange={setInputGain}
+        />
 
-        <div className="settings-stack">
-          <RecorderPanel
-            recorder={recorder}
-            onDeviceNameChange={setDeviceName}
-            onInputSelected={setInputSelected}
-            onInputAliasChange={setInputAlias}
-            onInputGainEnabledChange={setInputGainEnabled}
-            onInputGainChange={setInputGain}
-          />
+        <div className="secondary-stack">
+          <RecorderLogs recorder={recorder} />
+
+          <details>
+            <summary>
+              Recorders
+              <span className="badge">{controller.recorders.length}</span>
+            </summary>
+            <div className="section-body">
+              {controller.recorders.length === 0 ? (
+                <p className="dim">No recorders connected</p>
+              ) : (
+                controller.recorders.map((rec) => (
+                  <div key={`${rec.deviceName}-${rec.connectedAt}`} className="card">
+                    <div className="card-header">
+                      <strong>{rec.deviceName}</strong>
+                      <span className="dim">{formatBattery(rec.battery)}</span>
+                    </div>
+                    {(rec.inputs || []).length > 0 && (
+                      <ul className="compact-list">
+                        {rec.inputs.map((input) => (
+                          <li key={input.id}>
+                            <span>{input.inputName || input.label}</span>
+                            <span>
+                              {input.sampleRate
+                                ? `${input.sampleRate} Hz \u00B7 ${formatLevel(input.level)}`
+                                : 'waiting\u2026'}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </details>
         </div>
       </div>
 

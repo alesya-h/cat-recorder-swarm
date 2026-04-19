@@ -189,7 +189,7 @@ summary {
   }
 }
 
-.settings-stack {
+.secondary-stack {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
