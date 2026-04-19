@@ -1,12 +1,12 @@
 export async function loadBrowserAudioInputs() {
-  if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices?.enumerateDevices) {
+  if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('This browser does not support microphone capture');
   }
 
   const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
   try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
+    const devices = await tryEnumerateDevices();
     const audioInputs = devices
       .filter((device) => device.kind === 'audioinput')
       .map((device, index) => ({
@@ -15,11 +15,11 @@ export async function loadBrowserAudioInputs() {
         rawDeviceId: device.deviceId || '',
       }));
 
-    if (audioInputs.length === 0) {
-      return [{ id: 'default', label: 'Default microphone', rawDeviceId: '' }];
+    if (audioInputs.length > 0) {
+      return audioInputs;
     }
 
-    return audioInputs;
+    return fallbackInputsFromStream(permissionStream);
   } finally {
     permissionStream.getTracks().forEach((track) => track.stop());
   }
@@ -82,4 +82,43 @@ export async function startBrowserInput({ input, onChunk, onError }) {
       await audioContext.close();
     },
   };
+}
+
+async function tryEnumerateDevices() {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    return [];
+  }
+
+  try {
+    return await withTimeout(navigator.mediaDevices.enumerateDevices(), 2500);
+  } catch {
+    return [];
+  }
+}
+
+function fallbackInputsFromStream(stream) {
+  const audioTracks = stream.getAudioTracks();
+
+  if (audioTracks.length === 0) {
+    return [{ id: 'default', label: 'Default microphone', rawDeviceId: '' }];
+  }
+
+  return audioTracks.map((track, index) => {
+    const settings = typeof track.getSettings === 'function' ? track.getSettings() : {};
+    const rawDeviceId = settings.deviceId || '';
+    return {
+      id: rawDeviceId || track.id || `default-${index}`,
+      label: track.label || `Microphone ${index + 1}`,
+      rawDeviceId,
+    };
+  });
+}
+
+function withTimeout(promise, timeoutMs) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Timed out')), timeoutMs);
+    }),
+  ]);
 }
