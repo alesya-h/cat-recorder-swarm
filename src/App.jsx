@@ -43,6 +43,7 @@ export default function App() {
   const [state, setState] = useState(makeInitialState);
   const recorderClientRef = useRef(null);
   const recorderStartingRef = useRef(false);
+  const inputsRequestedRef = useRef(false);
   const controllerSocketRef = useRef(null);
   const controllerReconnectRef = useRef(null);
   const batteryCleanupRef = useRef(null);
@@ -54,6 +55,15 @@ export default function App() {
       cleanupControllerSocket(controllerSocketRef, controllerReconnectRef);
     };
   }, []);
+
+  useEffect(() => {
+    if (inputsRequestedRef.current || state.recorder.loadingInputs || state.recorder.availableInputs.length > 0) {
+      return;
+    }
+
+    inputsRequestedRef.current = true;
+    void loadInputs();
+  }, [state.recorder.loadingInputs, state.recorder.availableInputs]);
 
   useEffect(() => {
     if (!state.recorder.autoRecordEnabled) {
@@ -419,19 +429,14 @@ export default function App() {
             />
           </label>
 
-          <div className="button-row">
-            <button onClick={loadInputs} disabled={state.recorder.loadingInputs}>
-              {state.recorder.loadingInputs ? 'Loading inputs...' : 'Allow mic and start recording'}
-            </button>
-            <button className="secondary" onClick={stopRecorderMode} disabled={!state.recorder.running}>
-              Stop
-            </button>
-          </div>
-
-          <p className="subtle">Recording starts automatically after microphone access is granted.</p>
+          <p className="subtle">
+            {state.recorder.loadingInputs
+              ? 'Requesting microphone access and starting recording...'
+              : 'Recording starts automatically as soon as microphone access is available.'}
+          </p>
 
           <div className="input-picker">
-            {state.recorder.availableInputs.length === 0 ? <p className="subtle">Load the available microphones first.</p> : null}
+            {state.recorder.availableInputs.length === 0 ? <p className="subtle">Waiting for microphone inputs...</p> : null}
             {state.recorder.availableInputs.map((input) => {
               const selected = state.recorder.selectedInputIds.includes(input.id);
               const gainEnabled = !!state.recorder.inputGainEnabled[input.id];
