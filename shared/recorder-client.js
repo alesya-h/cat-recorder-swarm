@@ -48,11 +48,10 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
       clientType,
       deviceName: currentDeviceName,
       battery,
-      inputs: Array.from(sessions.values()).map((session) => ({
+      inputs: Array.from(sessions.values()).filter((session) => session.submitEnabled).map((session) => ({
         id: session.id,
         label: session.label,
         inputName: session.inputName,
-        submitEnabled: session.submitEnabled,
         active: session.active,
         sampleRate: session.sampleRate,
         channelCount: session.channelCount,
