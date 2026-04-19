@@ -1,9 +1,10 @@
 import { RECONNECT_DELAY_MS } from './constants.js';
+import { analyzeChannelData } from './audio/analyze.js';
 import { LoopedAudioBuffer } from './audio/looped-audio-buffer.js';
 import { encodeAudioClip } from './audio/encode.js';
 import { createBackendUrls } from './net.js';
 
-export function createRecorderClient({ backendUrl, deviceName, clientType, startInput, onState, onLog }) {
+export function createRecorderClient({ backendUrl, deviceName, clientType, preferredFormat = 'auto', startInput, onState, onLog }) {
   const urls = createBackendUrls(backendUrl);
   const sessions = new Map();
   let socket = null;
@@ -92,7 +93,20 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
       return;
     }
 
-    const encodedClip = await encodeAudioClip({ sampleRate: clip.sampleRate, channelData: clip.channelData });
+    const analysis = analyzeChannelData(clip.channelData);
+    const levelSummary = `peak=${analysis.peak.toFixed(4)} rms=${analysis.rms.toFixed(4)}`;
+
+    if (analysis.effectivelySilent) {
+      log(`Skipped ${session.inputName || session.label}: extracted clip is silent (${levelSummary})`);
+      return;
+    }
+
+    log(`Preparing ${session.inputName || session.label}: ${levelSummary}`);
+
+    const encodedClip = await encodeAudioClip(
+      { sampleRate: clip.sampleRate, channelData: clip.channelData },
+      { preferredFormat },
+    );
     const params = new URLSearchParams({
       controllerTimestamp: String(controllerTimestamp),
       deviceName: currentDeviceName,
@@ -122,9 +136,15 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
       return;
     }
 
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
     socket = new WebSocket(urls.wsUrl);
 
     socket.addEventListener('open', () => {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
       sendMessage('hello', { role: 'recorder', clientType });
       publishStatus();
       emitState();
@@ -140,6 +160,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
     });
 
     socket.addEventListener('close', () => {
+      socket = null;
       emitState();
       log('Recorder disconnected');
       scheduleReconnect();
@@ -147,6 +168,9 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
 
     socket.addEventListener('error', () => {
       log('Recorder socket error');
+      if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
+        socket.close();
+      }
     });
   }
 
@@ -184,7 +208,8 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
               emitState();
             }
 
-            session.level = level ?? computeLevel(channelData);
+            const analysis = analyzeChannelData(channelData);
+            session.level = level ?? analysis.rms;
             session.buffer.append(channelData, captureEndEpochMs);
             emitState();
           },
@@ -254,19 +279,4 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, start
       emitState();
     },
   };
-}
-
-function computeLevel(channelData) {
-  let sum = 0;
-  let count = 0;
-
-  for (const channel of channelData) {
-    for (let index = 0; index < channel.length; index += 1) {
-      const sample = channel[index];
-      sum += sample * sample;
-      count += 1;
-    }
-  }
-
-  return count === 0 ? 0 : Math.sqrt(sum / count);
 }

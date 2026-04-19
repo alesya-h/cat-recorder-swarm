@@ -77,6 +77,13 @@ export default function App() {
   }
 
   function connectControllerMode() {
+    if (
+      controllerSocketRef.current
+      && (controllerSocketRef.current.readyState === WebSocket.OPEN || controllerSocketRef.current.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+
     cleanupControllerSocket(controllerSocketRef, controllerReconnectRef);
     const urls = createBackendUrls(state.backendUrl);
     const socket = new WebSocket(urls.wsUrl);
@@ -108,6 +115,10 @@ export default function App() {
     });
 
     socket.addEventListener('close', () => {
+      if (controllerSocketRef.current === socket) {
+        controllerSocketRef.current = null;
+      }
+
       setState((current) => ({
         ...current,
         controller: { ...current.controller, connected: false },
@@ -122,6 +133,9 @@ export default function App() {
 
     socket.addEventListener('error', () => {
       setState((current) => ({ ...current, error: 'Controller connection failed' }));
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close();
+      }
     });
   }
 
@@ -163,6 +177,7 @@ export default function App() {
       backendUrl: state.backendUrl,
       deviceName: state.recorder.deviceName.trim(),
       clientType: 'web',
+      preferredFormat: 'wav',
       startInput: startBrowserInput,
       onState: (runtimeState) => {
         setState((current) => ({

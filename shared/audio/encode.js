@@ -2,7 +2,11 @@ import { encodeWav } from './wav.js';
 
 let flacModulePromise = null;
 
-export async function encodeAudioClip(clip) {
+export async function encodeAudioClip(clip, options = {}) {
+  if (options.preferredFormat === 'wav') {
+    return { bytes: encodeWav(clip), format: 'wav' };
+  }
+
   try {
     const bytes = await encodeFlac(clip);
     return { bytes, format: 'flac' };

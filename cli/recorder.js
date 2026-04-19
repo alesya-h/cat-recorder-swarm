@@ -27,6 +27,7 @@ const recorderClient = createRecorderClient({
   backendUrl,
   deviceName,
   clientType: 'cli',
+  preferredFormat: 'auto',
   startInput: startNodeInput,
   onState: (state) => {
     const status = state.connected ? 'connected' : 'disconnected';
