@@ -46,8 +46,6 @@ export default function App() {
         </div>
       )}
 
-      <ControllerPanel busy={controller.busy} onCapture={sendCapture} />
-
       <div className="info-grid">
         <details>
           <summary>
@@ -95,6 +93,8 @@ export default function App() {
           />
         </div>
       </div>
+
+      <ControllerPanel busy={controller.busy} onCapture={sendCapture} />
     </div>
   );
 }
