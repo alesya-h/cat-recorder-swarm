@@ -179,6 +179,18 @@ input {
   margin-bottom: 0.5rem;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+}
+
+.checkbox-row input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+}
+
 .slider-value {
   margin-top: 0.4rem;
   color: rgba(241, 248, 236, 0.72);

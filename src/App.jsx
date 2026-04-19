@@ -23,8 +23,8 @@ function makeInitialState() {
       availableInputs: [],
       selectedInputIds: [],
       inputAliases: {},
-      manualGainEnabled: false,
-      manualGain: 1,
+      inputGainEnabled: {},
+      inputGains: {},
       connected: false,
       running: false,
       activeInputs: [],
@@ -165,7 +165,7 @@ export default function App() {
       .filter((input) => selectedInputIds.includes(input.id))
       .map((input, index, items) => ({
         ...input,
-        gain: state.recorder.manualGainEnabled ? state.recorder.manualGain : 1,
+        gain: state.recorder.inputGainEnabled[input.id] ? getInputGain(state.recorder.inputGains[input.id]) : 1,
         inputName: buildInputName(input, state.recorder.inputAliases[input.id], items.length),
       }));
 
@@ -424,49 +424,12 @@ export default function App() {
             </button>
           </div>
 
-          <label className="input-card">
-            <input
-              type="checkbox"
-              checked={state.recorder.manualGainEnabled}
-              onChange={(event) => {
-                setState((current) => ({
-                  ...current,
-                  recorder: {
-                    ...current.recorder,
-                    manualGainEnabled: event.target.checked,
-                  },
-                }));
-              }}
-            />
-            <div>
-              <strong>Manual gain</strong>
-              <p className="subtle">Raw mic capture is used now. Enable this only if the recorder is too quiet.</p>
-              <input
-                type="range"
-                min="1"
-                max="8"
-                step="0.1"
-                value={state.recorder.manualGain}
-                disabled={!state.recorder.manualGainEnabled}
-                onChange={(event) => {
-                  const manualGain = Number(event.target.value);
-                  setState((current) => ({
-                    ...current,
-                    recorder: {
-                      ...current.recorder,
-                      manualGain,
-                    },
-                  }));
-                }}
-              />
-              <div className="slider-value">{state.recorder.manualGain.toFixed(1)}x</div>
-            </div>
-          </label>
-
           <div className="input-picker">
             {state.recorder.availableInputs.length === 0 ? <p className="subtle">Load the available microphones first.</p> : null}
             {state.recorder.availableInputs.map((input) => {
               const selected = state.recorder.selectedInputIds.includes(input.id);
+              const gainEnabled = !!state.recorder.inputGainEnabled[input.id];
+              const gain = getInputGain(state.recorder.inputGains[input.id]);
               return (
                 <label key={input.id} className="input-card">
                   <input
@@ -503,6 +466,47 @@ export default function App() {
                       }}
                       placeholder="Optional input name"
                     />
+                    <label className="subtle checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={gainEnabled}
+                        onChange={(event) => {
+                          setState((current) => ({
+                            ...current,
+                            recorder: {
+                              ...current.recorder,
+                              inputGainEnabled: {
+                                ...current.recorder.inputGainEnabled,
+                                [input.id]: event.target.checked,
+                              },
+                            },
+                          }));
+                        }}
+                      />
+                      <span>Manual gain for this input</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="8"
+                      step="0.1"
+                      value={gain}
+                      disabled={!gainEnabled}
+                      onChange={(event) => {
+                        const nextGain = Number(event.target.value);
+                        setState((current) => ({
+                          ...current,
+                          recorder: {
+                            ...current.recorder,
+                            inputGains: {
+                              ...current.recorder.inputGains,
+                              [input.id]: nextGain,
+                            },
+                          },
+                        }));
+                      }}
+                    />
+                    <div className="slider-value">{gain.toFixed(1)}x</div>
                   </div>
                 </label>
               );
@@ -556,6 +560,15 @@ function formatBattery(battery) {
   }
 
   return `${Math.round((battery.level || 0) * 100)}% ${battery.charging ? 'charging' : 'on battery'}`;
+}
+
+function getInputGain(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 1;
+  }
+
+  return Math.max(1, Math.min(8, numeric));
 }
 
 function formatLevel(level) {
