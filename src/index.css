@@ -435,7 +435,7 @@ input[type='range'] {
   position: fixed;
   bottom: 0;
   left: 50%;
-  transform: translateX(-50%) translateY(10%);
+  transform: translateX(-50%);
   width: clamp(220px, 55vw, 300px);
   color: rgba(255, 255, 255, 0.14);
   z-index: 1;
@@ -445,7 +445,7 @@ input[type='range'] {
 .peeking-cat svg {
   display: block;
   width: 100%;
-  height: auto;
+  max-height: max(5rem, 13vh);
 }
 
 /* ── Utility ── */
