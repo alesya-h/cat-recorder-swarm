@@ -4,8 +4,11 @@ import { createBackendUrls, normalizeBackendUrl } from '../shared/net.js';
 import { createRecorderClient } from '../shared/recorder-client.js';
 import { loadBrowserAudioInputs, startBrowserInput } from './audio/browser-inputs.js';
 
+const DEVICE_NAME_STORAGE_KEY = 'cat-recorder-device-name';
+
 function makeInitialState() {
   const backendUrl = normalizeBackendUrl();
+  const deviceName = getInitialDeviceName();
 
   return {
     backendUrl,
@@ -18,8 +21,9 @@ function makeInitialState() {
       lastControllerTimestamp: null,
     },
     recorder: {
-      deviceName: '',
+      deviceName,
       loadingInputs: false,
+      autoRecordEnabled: true,
       availableInputs: [],
       selectedInputIds: [],
       inputAliases: {},
@@ -37,6 +41,7 @@ function makeInitialState() {
 export default function App() {
   const [state, setState] = useState(makeInitialState);
   const recorderClientRef = useRef(null);
+  const recorderStartingRef = useRef(false);
   const controllerSocketRef = useRef(null);
   const controllerReconnectRef = useRef(null);
   const batteryCleanupRef = useRef(null);
@@ -48,6 +53,21 @@ export default function App() {
       cleanupControllerSocket(controllerSocketRef, controllerReconnectRef);
     };
   }, []);
+
+  useEffect(() => {
+    if (state.role !== 'recorder' || !state.recorder.autoRecordEnabled) {
+      return;
+    }
+
+    if (state.recorder.availableInputs.length === 0 || state.recorder.running || recorderStartingRef.current) {
+      return;
+    }
+
+    recorderStartingRef.current = true;
+    void startRecorderMode().finally(() => {
+      recorderStartingRef.current = false;
+    });
+  }, [state.role, state.recorder.autoRecordEnabled, state.recorder.availableInputs, state.recorder.running]);
 
   async function loadInputs() {
     setState((current) => ({
@@ -64,6 +84,7 @@ export default function App() {
         ...current,
         recorder: {
           ...current.recorder,
+          autoRecordEnabled: true,
           loadingInputs: false,
           availableInputs,
           selectedInputIds,
@@ -141,13 +162,9 @@ export default function App() {
     });
   }
 
-  async function startRecorderMode() {
-    if (!state.recorder.deviceName.trim()) {
-      setState((current) => ({ ...current, error: 'Recorder device name is required' }));
-      return;
-    }
-
-    let availableInputs = state.recorder.availableInputs;
+  async function startRecorderMode(recorderState = state.recorder) {
+    const effectiveDeviceName = recorderState.deviceName.trim() || 'web-recorder';
+    let availableInputs = recorderState.availableInputs;
     if (availableInputs.length === 0) {
       try {
         availableInputs = await loadBrowserAudioInputs();
@@ -157,16 +174,16 @@ export default function App() {
       }
     }
 
-    const selectedInputIds = state.recorder.selectedInputIds.length > 0
-      ? state.recorder.selectedInputIds
+    const selectedInputIds = recorderState.selectedInputIds.length > 0
+      ? recorderState.selectedInputIds
       : availableInputs.map((input) => input.id);
 
     const selectedInputs = availableInputs
       .filter((input) => selectedInputIds.includes(input.id))
       .map((input, index, items) => ({
         ...input,
-        gain: state.recorder.inputGainEnabled[input.id] ? getInputGain(state.recorder.inputGains[input.id]) : 1,
-        inputName: buildInputName(input, state.recorder.inputAliases[input.id], items.length),
+        gain: recorderState.inputGainEnabled[input.id] ? gainFromDb(getInputGainDb(recorderState.inputGains[input.id])) : 1,
+        inputName: buildInputName(input, recorderState.inputAliases[input.id], items.length),
       }));
 
     if (selectedInputs.length === 0) {
@@ -178,7 +195,7 @@ export default function App() {
 
     const recorderClient = createRecorderClient({
       backendUrl: state.backendUrl,
-      deviceName: state.recorder.deviceName.trim(),
+      deviceName: effectiveDeviceName,
       clientType: 'web',
       preferredFormat: 'wav',
       startInput: startBrowserInput,
@@ -216,6 +233,7 @@ export default function App() {
         error: '',
         recorder: {
           ...current.recorder,
+          autoRecordEnabled: true,
           availableInputs,
           selectedInputIds,
           running: true,
@@ -229,6 +247,7 @@ export default function App() {
       ...current,
       recorder: {
         ...current.recorder,
+        autoRecordEnabled: false,
         connected: false,
         running: false,
         activeInputs: [],
@@ -402,49 +421,59 @@ export default function App() {
               value={state.recorder.deviceName}
               onChange={(event) => {
                 const deviceName = event.target.value;
+                saveDeviceName(deviceName);
                 setState((current) => ({
                   ...current,
                   recorder: { ...current.recorder, deviceName },
                 }));
-                recorderClientRef.current?.setDeviceName(deviceName);
+                recorderClientRef.current?.setDeviceName(deviceName.trim() || 'web-recorder');
               }}
-              placeholder="Kitchen phone"
+              placeholder="web-recorder"
             />
           </label>
 
           <div className="button-row">
             <button onClick={loadInputs} disabled={state.recorder.loadingInputs}>
-              {state.recorder.loadingInputs ? 'Loading inputs...' : 'Allow mic and load inputs'}
-            </button>
-            <button onClick={startRecorderMode} disabled={state.recorder.running}>
-              Start recording
+              {state.recorder.loadingInputs ? 'Loading inputs...' : 'Allow mic and start recording'}
             </button>
             <button className="secondary" onClick={stopRecorderMode} disabled={!state.recorder.running}>
               Stop
             </button>
           </div>
 
+          <p className="subtle">Recording starts automatically after microphone access is granted.</p>
+
           <div className="input-picker">
             {state.recorder.availableInputs.length === 0 ? <p className="subtle">Load the available microphones first.</p> : null}
             {state.recorder.availableInputs.map((input) => {
               const selected = state.recorder.selectedInputIds.includes(input.id);
               const gainEnabled = !!state.recorder.inputGainEnabled[input.id];
-              const gain = getInputGain(state.recorder.inputGains[input.id]);
+              const gain = getInputGainDb(state.recorder.inputGains[input.id]);
               return (
                 <label key={input.id} className="input-card">
                   <input
                     type="checkbox"
                     checked={selected}
                     onChange={(event) => {
+                      const nextSelectedInputIds = event.target.checked
+                        ? [...state.recorder.selectedInputIds, input.id]
+                        : state.recorder.selectedInputIds.filter((value) => value !== input.id);
+                      const nextRecorderState = {
+                        ...state.recorder,
+                        selectedInputIds: nextSelectedInputIds,
+                      };
+
                       setState((current) => ({
                         ...current,
                         recorder: {
                           ...current.recorder,
-                          selectedInputIds: event.target.checked
-                            ? [...current.recorder.selectedInputIds, input.id]
-                            : current.recorder.selectedInputIds.filter((value) => value !== input.id),
+                          selectedInputIds: nextSelectedInputIds,
                         },
                       }));
+
+                      if (state.recorder.running) {
+                        void startRecorderMode(nextRecorderState);
+                      }
                     }}
                   />
                   <div>
@@ -453,6 +482,9 @@ export default function App() {
                       value={state.recorder.inputAliases[input.id] || ''}
                       onChange={(event) => {
                         const alias = event.target.value;
+                        const selectedCount = state.recorder.selectedInputIds.includes(input.id)
+                          ? state.recorder.selectedInputIds.length
+                          : state.recorder.selectedInputIds.length + 1;
                         setState((current) => ({
                           ...current,
                           recorder: {
@@ -463,6 +495,9 @@ export default function App() {
                             },
                           },
                         }));
+                        recorderClientRef.current?.setInputConfig(input.id, {
+                          inputName: buildInputName(input, alias, selectedCount),
+                        });
                       }}
                       placeholder="Optional input name"
                     />
@@ -471,25 +506,29 @@ export default function App() {
                         type="checkbox"
                         checked={gainEnabled}
                         onChange={(event) => {
+                          const enabled = event.target.checked;
                           setState((current) => ({
                             ...current,
                             recorder: {
                               ...current.recorder,
                               inputGainEnabled: {
                                 ...current.recorder.inputGainEnabled,
-                                [input.id]: event.target.checked,
+                                [input.id]: enabled,
                               },
                             },
                           }));
+                          recorderClientRef.current?.setInputConfig(input.id, {
+                            gain: enabled ? gainFromDb(gain) : 1,
+                          });
                         }}
                       />
                       <span>Manual gain for this input</span>
                     </label>
                     <input
                       type="range"
-                      min="1"
-                      max="8"
-                      step="0.1"
+                      min="-12"
+                      max="42"
+                      step="1"
                       value={gain}
                       disabled={!gainEnabled}
                       onChange={(event) => {
@@ -504,9 +543,12 @@ export default function App() {
                             },
                           },
                         }));
+                        recorderClientRef.current?.setInputConfig(input.id, {
+                          gain: gainFromDb(nextGain),
+                        });
                       }}
                     />
-                    <div className="slider-value">{gain.toFixed(1)}x</div>
+                    <div className="slider-value">{formatGain(gain)}</div>
                   </div>
                 </label>
               );
@@ -562,13 +604,22 @@ function formatBattery(battery) {
   return `${Math.round((battery.level || 0) * 100)}% ${battery.charging ? 'charging' : 'on battery'}`;
 }
 
-function getInputGain(value) {
+function getInputGainDb(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
-    return 1;
+    return 0;
   }
 
-  return Math.max(1, Math.min(8, numeric));
+  return Math.max(-12, Math.min(42, numeric));
+}
+
+function gainFromDb(db) {
+  return 10 ** (db / 20);
+}
+
+function formatGain(db) {
+  const sign = db > 0 ? '+' : '';
+  return `${sign}${db} dB (${gainFromDb(db).toFixed(1)}x)`;
 }
 
 function formatLevel(level) {
@@ -578,6 +629,23 @@ function formatLevel(level) {
 
   const percent = Math.max(0, Math.min(100, Math.round(level * 100)));
   return `peak ${percent}%`;
+}
+
+function getInitialDeviceName() {
+  if (typeof window === 'undefined') {
+    return 'web-recorder';
+  }
+
+  return window.localStorage.getItem(DEVICE_NAME_STORAGE_KEY)?.trim() || 'web-recorder';
+}
+
+function saveDeviceName(deviceName) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const trimmed = deviceName.trim();
+  window.localStorage.setItem(DEVICE_NAME_STORAGE_KEY, trimmed || 'web-recorder');
 }
 
 async function startBatteryReporting(recorderClient, batteryCleanupRef, setState) {

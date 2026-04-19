@@ -189,6 +189,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
         level: 0,
         buffer: null,
         stop: null,
+        setGain: null,
         lastError: null,
       };
 
@@ -233,6 +234,7 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
         });
 
         session.stop = controller?.stop || null;
+        session.setGain = controller?.setGain || null;
         session.active = true;
         publishStatus();
         emitState();
@@ -286,6 +288,23 @@ export function createRecorderClient({ backendUrl, deviceName, clientType, prefe
     },
     setDeviceName(nextDeviceName) {
       currentDeviceName = nextDeviceName;
+      publishStatus();
+      emitState();
+    },
+    setInputConfig(inputId, config = {}) {
+      const session = sessions.get(inputId);
+      if (!session) {
+        return;
+      }
+
+      if (typeof config.inputName === 'string') {
+        session.inputName = config.inputName;
+      }
+
+      if (config.gain !== undefined) {
+        session.setGain?.(config.gain);
+      }
+
       publishStatus();
       emitState();
     },

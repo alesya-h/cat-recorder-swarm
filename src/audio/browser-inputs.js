@@ -81,9 +81,10 @@ export async function startBrowserInput({ input, onChunk, onError }) {
 
   const audioContext = new AudioContextCtor({ latencyHint: 'interactive' });
   const source = audioContext.createMediaStreamSource(stream);
+  const gainNode = audioContext.createGain();
   const sink = audioContext.createGain();
-  const gain = normalizeGain(input.gain);
 
+  gainNode.gain.value = normalizeGain(input.gain);
   sink.gain.value = 0;
   sink.connect(audioContext.destination);
   await audioContext.resume();
@@ -92,9 +93,9 @@ export async function startBrowserInput({ input, onChunk, onError }) {
 
   try {
     if (audioContext.audioWorklet?.addModule && typeof AudioWorkletNode !== 'undefined') {
-      disconnectNode = await startWithAudioWorklet({ audioContext, source, sink, gain, onChunk, onError });
+      disconnectNode = await startWithAudioWorklet({ audioContext, source, gainNode, sink, onChunk, onError });
     } else {
-      disconnectNode = startWithScriptProcessor({ audioContext, source, sink, gain, onChunk, onError });
+      disconnectNode = startWithScriptProcessor({ audioContext, source, gainNode, sink, onChunk, onError });
     }
   } catch (error) {
     await audioContext.close().catch(() => {});
@@ -103,9 +104,15 @@ export async function startBrowserInput({ input, onChunk, onError }) {
   }
 
   return {
+    setGain(nextGain) {
+      const normalized = normalizeGain(nextGain);
+      gainNode.gain.cancelScheduledValues(audioContext.currentTime);
+      gainNode.gain.setTargetAtTime(normalized, audioContext.currentTime, 0.02);
+    },
     stop: async () => {
       disconnectNode?.();
       sink.disconnect();
+      gainNode.disconnect();
       source.disconnect();
       stream.getTracks().forEach((track) => track.stop());
       await audioContext.close();
@@ -113,7 +120,7 @@ export async function startBrowserInput({ input, onChunk, onError }) {
   };
 }
 
-async function startWithAudioWorklet({ audioContext, source, sink, gain, onChunk, onError }) {
+async function startWithAudioWorklet({ audioContext, source, gainNode, sink, onChunk, onError }) {
   const moduleUrl = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: 'text/javascript' }));
   const rollingMeter = createRollingPeakMeter();
 
@@ -127,7 +134,7 @@ async function startWithAudioWorklet({ audioContext, source, sink, gain, onChunk
 
   workletNode.port.onmessage = (event) => {
     try {
-      const channelData = event.data.channelData.map((channel) => applyGain(new Float32Array(channel), gain));
+      const channelData = event.data.channelData.map((channel) => new Float32Array(channel));
       const peak = computePeak(channelData);
       onChunk({
         sampleRate: audioContext.sampleRate,
@@ -140,7 +147,8 @@ async function startWithAudioWorklet({ audioContext, source, sink, gain, onChunk
     }
   };
 
-  source.connect(workletNode);
+  source.connect(gainNode);
+  gainNode.connect(workletNode);
   workletNode.connect(sink);
 
   return () => {
@@ -149,7 +157,7 @@ async function startWithAudioWorklet({ audioContext, source, sink, gain, onChunk
   };
 }
 
-function startWithScriptProcessor({ audioContext, source, sink, gain, onChunk, onError }) {
+function startWithScriptProcessor({ audioContext, source, gainNode, sink, onChunk, onError }) {
   const channelCount = Math.max(1, Math.min(source.channelCount || 1, 2));
   const processor = audioContext.createScriptProcessor(4096, channelCount, channelCount);
   const rollingMeter = createRollingPeakMeter();
@@ -159,7 +167,7 @@ function startWithScriptProcessor({ audioContext, source, sink, gain, onChunk, o
       const inputBuffer = event.inputBuffer;
       const copiedChannelData = Array.from({ length: inputBuffer.numberOfChannels }, (_, channelIndex) => {
         const sourceChannel = inputBuffer.getChannelData(channelIndex);
-        return applyGain(new Float32Array(sourceChannel), gain);
+        return new Float32Array(sourceChannel);
       });
 
       const peak = computePeak(copiedChannelData);
@@ -175,7 +183,8 @@ function startWithScriptProcessor({ audioContext, source, sink, gain, onChunk, o
     }
   };
 
-  source.connect(processor);
+  source.connect(gainNode);
+  gainNode.connect(processor);
   processor.connect(sink);
 
   return () => {
@@ -256,18 +265,6 @@ function createRollingPeakMeter(windowMs = 500) {
   };
 }
 
-function applyGain(channel, gain) {
-  if (gain === 1) {
-    return channel;
-  }
-
-  for (let index = 0; index < channel.length; index += 1) {
-    channel[index] = clampSample(channel[index] * gain);
-  }
-
-  return channel;
-}
-
 function computePeak(channelData) {
   let peak = 0;
 
@@ -289,15 +286,5 @@ function normalizeGain(value) {
     return 1;
   }
 
-  return Math.max(0.1, Math.min(10, numeric));
-}
-
-function clampSample(sample) {
-  if (sample > 1) {
-    return 1;
-  }
-  if (sample < -1) {
-    return -1;
-  }
-  return sample;
+  return Math.max(0.01, Math.min(256, numeric));
 }
