@@ -42,6 +42,7 @@ export function useControllerConnection({ backendUrl, setError }) {
           clientType: 'web',
         }));
 
+        setError((current) => (current === 'Controller connection failed' ? '' : current));
         setController((current) => ({ ...current, connected: true }));
       });
 

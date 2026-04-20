@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { normalizeBackendUrl } from '../shared/net.js';
 import { ControllerPanel } from './features/controller/ControllerPanel.jsx';
 import { useControllerConnection } from './features/controller/useControllerConnection.js';
+import { RecordingsPage } from './features/recordings/RecordingsPage.jsx';
 import { PeekingCat } from './PeekingCat.jsx';
 import { RecorderSettings, RecorderLogs } from './features/recorder/RecorderPanel.jsx';
 import { useRecorderRuntime } from './features/recorder/useRecorderRuntime.js';
@@ -10,6 +11,14 @@ import { formatBattery, formatLevel } from './lib/formatters.js';
 const BACKEND_URL = normalizeBackendUrl();
 
 export default function App() {
+  if (normalizePathname(window.location.pathname) === '/recordings') {
+    return <RecordingsPage backendUrl={BACKEND_URL} />;
+  }
+
+  return <HomePage />;
+}
+
+function HomePage() {
   const [error, setError] = useState('');
   const { controller, sendCapture } = useControllerConnection({ backendUrl: BACKEND_URL, setError });
   const {
@@ -37,6 +46,7 @@ export default function App() {
         )}
 
         <span className="spacer" />
+        <a className="nav-link" href="/recordings">Recordings</a>
         <span className="device-name">{recorder.deviceName || 'web-recorder'}</span>
       </header>
 
@@ -102,4 +112,8 @@ export default function App() {
       <PeekingCat />
     </div>
   );
+}
+
+function normalizePathname(pathname) {
+  return pathname.replace(/\/+$/, '') || '/';
 }

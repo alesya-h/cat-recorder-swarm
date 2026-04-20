@@ -6,6 +6,11 @@ export function registerApiRoutes(app, { recordingStore, recorderRegistry }) {
     response.json({ ok: true });
   });
 
+  app.get('/api/recordings', async (_request, response) => {
+    const recordings = await recordingStore.listRecordings();
+    response.json({ recordings });
+  });
+
   app.post('/api/capture-requests', async (request, response) => {
     const durationSeconds = Number(request.body?.durationSeconds || 0);
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {

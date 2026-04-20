@@ -22,6 +22,7 @@ export function createBackendUrls(baseUrl) {
     wsUrl: toWebSocketUrl(normalized),
     captureRequestsUrl: `${normalized}/api/capture-requests`,
     clipsUrl: `${normalized}/api/clips`,
+    recordingsUrl: `${normalized}/api/recordings`,
     transcriptionsUrl: `${normalized}/api/transcriptions`,
   };
 }

@@ -13,6 +13,7 @@ const app = await createApp({
   recordingStore,
   recorderRegistry,
   distDir: config.distDir,
+  recordingsDir: config.recordingsDir,
 });
 const server = await createHttpServer(app);
 

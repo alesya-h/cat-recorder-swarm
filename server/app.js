@@ -3,7 +3,7 @@ import path from 'node:path';
 import express from 'express';
 import { registerApiRoutes } from './routes/api.js';
 
-export async function createApp({ recordingStore, recorderRegistry, distDir }) {
+export async function createApp({ recordingStore, recorderRegistry, distDir, recordingsDir }) {
   const app = express();
 
   app.use((request, response, next) => {
@@ -19,6 +19,7 @@ export async function createApp({ recordingStore, recorderRegistry, distDir }) {
 
   app.use(express.json({ limit: '1mb' }));
   registerApiRoutes(app, { recordingStore, recorderRegistry });
+  app.use('/recordings-files', express.static(recordingsDir));
 
   if (await directoryExists(distDir)) {
     app.use(express.static(distDir));
